@@ -1,0 +1,433 @@
+# CLAIRE Session Capsule Protocol
+
+AI keeps losing the plot.
+
+Every serious AI workflow eventually hits the same wall: the session resets, the context disappears, and the user has to rebuild everything manually.
+
+What were we doing? What broke? What worked? What should not be repeated? What is the next safe step?
+
+The **CLAIRE Session Capsule Protocol** is a proof-of-continuity system for AI workflows. It creates a portable handoff capsule that can be read by a later session so the next assistant can restore the operational state instead of starting cold.{
+  "scope": "Demo handoff: repo cleanup",
+  "current_state": "The previous session identified GitHub presentation and public technical proof as the priority.",
+  "changes": [
+    "Made the session capsule repo visible",
+    "Added proof artifacts",# Session Capsule: Demo handoff: repo cleanup
+
+## Session ID
+demo-session-capsule-001
+
+## Created At
+2026-06-03T13:30:00+00:00
+
+## Scope
+Demo handoff: repo cleanup
+
+## Current State
+The previous session identified GitHub presentation and public technical proof as the priority.
+
+## Changes
+- Made the session capsule repo visible
+- Added proof artifacts
+- Validated capsule creation, saving, loading, indexing, and recall
+
+## Failures
+- The assistant initially could not see the repo before access changed
+- The workflow needed proof files, not only a claim in the README
+
+## Restore Point
+Repo is visible and ready for proof packaging.
+
+## Next Safe Step
+Add README, example capsule, utility code, and test evidence to the public repo.
+
+## Do Not Repeat
+- Do not claim tests passed without evidence
+- Do not publish private working paths or raw session notes
+- Do not let memory override the user's current instruction
+
+## Spoken Handoff Text
+Resume from GitHub proof packaging. Verify before claiming success.
+
+    "Validated capsule creation, saving, loading, indexing, and recall"
+  ],
+  "failures": [
+    "The assistant initially could not see the repo before access changed",
+    "The workflow needed proof files, not only a claim in the README"
+  ],
+  "restore_point": "Repo is visible and ready for proof packaging.",
+  "next_safe_step": "Add README, example capsule, utility code, and test evidence to the public repo.",
+  "do_not_repeat": [
+    "Do not claim tests passed without evidence",
+    "Do not publish private working paths or raw session notes",
+    "Do not let memory override the user's current instruction"
+  ],
+  "spoken_handoff_text": "Resume from GitHub proof packaging. Verify before claiming success.",
+  "session_id": "demo-session-capsule-001",
+  "created_at": "2026-06-03T13:30:00+00:00"
+}
+
+## What a capsule preserves
+
+- current state
+- failure history
+- restore point
+- next safe step
+- do-not-repeat instructions
+- JSON continuity records
+- Markdown continuity records
+- lightweight recall behavior for future sessions
+
+## Proof artifacts in this repo
+
+- `session_capsule_app.py` — reusable Python utility for creating, validating, saving, loading, indexing, and recalling capsules.
+- `examples/example_capsule.json` — machine-readable sample capsule.
+- `examples/example_capsule.md` — human-readable sample capsule.
+- `TEST_RESULTS.md` — local validation output showing 13/13 checks passed.
+
+## How to run the prototype
+
+```bash
+python3 session_capsule_app.py
+```
+
+That creates a demo capsule in:
+
+```text
+~/Downloads/session_capsules/
+```
+
+The module also exposes reusable functions:
+
+```python
+from session_capsule_app import create_capsule, save_full_capsule, index_capsules, recall_capsule
+```
+
+## Current validation status
+
+The current local validation run passed 13/13 checks. See `TEST_RESULTS.md` for the exact checks.
+
+## Why this matters
+
+Most AI systems answer from the current prompt window. When the session resets, the user has to rebuild context manually. The Session Capsule Protocol gives the workflow a portable restore point: state, failures, next steps, and boundaries travel together.
+
+## Where this fits in CLAIRE Systems
+
+This is one proof module inside the broader CLAIRE Systems architecture:
+
+- **ARE** — deterministic recall
+- **Gyro / Q Insight** — orientation before generation
+- **Sentinel** — governance and safety rules
+- **TrailLink** — provenance and traceability
+- **Session Capsule Protocol** — portable continuity handoff
+
+## Core thesis
+
+AI should not generate before it orients. AI should not make users rebuild context every time a session resets.
+
+Live demo: https://clairesystems.ai
+
+Created by Steven Roth, founder of CLAIRE Systems.
+
+Patent-pending AI continuity / governed memory architecture.
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+REQUIRED_FIELDS = [
+    "scope",
+    "current_state",
+    "changes",
+    "failures",
+    "restore_point",
+    "next_safe_step",
+    "do_not_repeat",
+]
+
+
+@dataclass
+class SessionCapsule:
+    scope: str
+    current_state: str
+    changes: list[str]
+    failures: list[str]
+    restore_point: str
+    next_safe_step: str
+    do_not_repeat: list[str]
+    spoken_handoff_text: str | None = None
+    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+def create_capsule(
+    scope: str,
+    current_state: str,
+    changes: list[str] | None = None,
+    failures: list[str] | None = None,
+    restore_point: str = "",
+    next_safe_step: str = "",
+    do_not_repeat: list[str] | None = None,
+    spoken_handoff_text: str | None = None,
+) -> SessionCapsule:
+    capsule = SessionCapsule(
+        scope=scope.strip(),
+        current_state=current_state.strip(),
+        changes=changes or [],
+        failures=failures or [],
+        restore_point=restore_point.strip(),
+        next_safe_step=next_safe_step.strip(),
+        do_not_repeat=do_not_repeat or [],
+        spoken_handoff_text=spoken_handoff_text.strip() if spoken_handoff_text else None,
+    )
+    validate_capsule(capsule)
+    return capsule
+
+
+def validate_capsule(capsule: SessionCapsule | dict[str, Any]) -> None:
+    data = asdict(capsule) if isinstance(capsule, SessionCapsule) else capsule
+
+    missing = [field for field in REQUIRED_FIELDS if field not in data]
+    if missing:
+        raise ValueError(f"Missing required capsule fields: {', '.join(missing)}")
+
+    for field_name in ["scope", "current_state", "restore_point", "next_safe_step"]:
+        if not isinstance(data[field_name], str) or not data[field_name].strip():
+            raise ValueError(f"Field '{field_name}' must be a non-empty string")
+
+    for field_name in ["changes", "failures", "do_not_repeat"]:
+        if not isinstance(data[field_name], list):
+            raise ValueError(f"Field '{field_name}' must be a list")
+
+
+def capsule_to_dict(capsule: SessionCapsule | dict[str, Any]) -> dict[str, Any]:
+    data = asdict(capsule) if isinstance(capsule, SessionCapsule) else dict(capsule)
+    validate_capsule(data)
+    return data
+
+
+def safe_slug(text: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", text.strip().lower()).strip("-")
+    return slug[:60] or "session-capsule"
+
+
+def save_capsule_json(capsule: SessionCapsule | dict[str, Any], folder: str | Path) -> Path:
+    data = capsule_to_dict(capsule)
+    target = Path(folder)
+    target.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{data.get('created_at', '').replace(':', '-')}_{safe_slug(data['scope'])}.json"
+    path = target / filename
+
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def load_capsule_json(path: str | Path) -> dict[str, Any]:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    validate_capsule(data)
+    return data
+
+
+def save_capsule_markdown(capsule: SessionCapsule | dict[str, Any], folder: str | Path) -> Path:
+    data = capsule_to_dict(capsule)
+    target = Path(folder)
+    target.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{data.get('created_at', '').replace(':', '-')}_{safe_slug(data['scope'])}.md"
+    path = target / filename
+
+    markdown = render_capsule_markdown(data)
+    path.write_text(markdown, encoding="utf-8")
+    return path
+
+
+def render_capsule_markdown(capsule: SessionCapsule | dict[str, Any]) -> str:
+    data = capsule_to_dict(capsule)
+
+    def bullets(items: list[str]) -> str:
+        if not items:
+            return "- None recorded"
+        return "\n".join(f"- {item}" for item in items)
+
+    spoken = data.get("spoken_handoff_text") or "None recorded"
+
+    return f"""# Session Capsule: {data['scope']}
+
+## Session ID
+{data.get('session_id', 'unknown')}
+
+## Created At
+{data.get('created_at', 'unknown')}
+
+## Scope
+{data['scope']}
+
+## Current State
+{data['current_state']}
+
+## Changes
+{bullets(data['changes'])}
+
+## Failures
+{bullets(data['failures'])}
+
+## Restore Point
+{data['restore_point']}
+
+## Next Safe Step
+{data['next_safe_step']}
+
+## Do Not Repeat
+{bullets(data['do_not_repeat'])}
+
+## Spoken Handoff Text
+{spoken}
+"""
+
+
+def index_capsules(folder: str | Path) -> list[dict[str, Any]]:
+    target = Path(folder)
+    if not target.exists():
+        return []
+
+    capsules: list[dict[str, Any]] = []
+
+    for path in sorted(target.glob("*.json")):
+        try:
+            data = load_capsule_json(path)
+            data["_source_path"] = str(path)
+            data["_search_text"] = build_search_text(data)
+            capsules.append(data)
+        except Exception:
+            continue
+
+    return capsules
+
+
+def build_search_text(capsule: dict[str, Any]) -> str:
+    parts = [
+        capsule.get("scope", ""),
+        capsule.get("current_state", ""),
+        " ".join(capsule.get("changes", [])),
+        " ".join(capsule.get("failures", [])),
+        capsule.get("restore_point", ""),
+        capsule.get("next_safe_step", ""),
+        " ".join(capsule.get("do_not_repeat", [])),
+        capsule.get("spoken_handoff_text") or "",
+    ]
+    return " ".join(parts).lower()
+
+
+def recall_capsule(query: str, capsules: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not capsules:
+        return None
+
+    query_terms = tokenize(query)
+    if not query_terms:
+        return capsules[-1]
+
+    scored: list[tuple[int, dict[str, Any]]] = []
+
+    for capsule in capsules:
+        text = capsule.get("_search_text") or build_search_text(capsule)
+        score = sum(text.count(term) for term in query_terms)
+
+        # Operational continuity boosts
+        if "broke" in query_terms or "failed" in query_terms or "failure" in query_terms:
+            score += sum(3 for item in capsule.get("failures", []) if any(term in item.lower() for term in query_terms))
+
+        if "next" in query_terms or "safe" in query_terms or "step" in query_terms:
+            next_safe = capsule.get("next_safe_step", "").lower()
+            score += sum(3 for term in query_terms if term in next_safe)
+
+        if "repeat" in query_terms:
+            repeat_text = " ".join(capsule.get("do_not_repeat", [])).lower()
+            score += sum(3 for term in query_terms if term in repeat_text)
+
+        scored.append((score, capsule))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    best_score, best_capsule = scored[0]
+
+    return best_capsule if best_score > 0 else capsules[-1]
+
+
+def tokenize(text: str) -> list[str]:
+    stopwords = {
+        "the", "a", "an", "and", "or", "to", "of", "we", "were", "was",
+        "what", "doing", "last", "time", "is", "are", "for", "with"
+    }
+    return [
+        token
+        for token in re.findall(r"[a-zA-Z0-9]+", text.lower())
+        if token not in stopwords
+    ]
+
+
+def save_full_capsule(capsule: SessionCapsule | dict[str, Any], folder: str | Path) -> dict[str, str]:
+    json_path = save_capsule_json(capsule, folder)
+    markdown_path = save_capsule_markdown(capsule, folder)
+    return {
+        "json": str(json_path),
+        "markdown": str(markdown_path),
+    }
+
+
+if __name__ == "__main__":
+    capsule = create_capsule(
+        scope="Session Capsule prototype",
+        current_state="Implementation file has been created locally.",
+        changes=["Added JSON saving", "Added Markdown saving", "Added lightweight recall"],
+        failures=["No saved module existed before this file was created"],
+        restore_point="session_capsule_app.py saved in Downloads",
+        next_safe_step="Run the validation checks and publish the test evidence",
+        do_not_repeat=["Do not claim tests passed without validation output"],
+        spoken_handoff_text="This capsule proves structured continuity can be saved and recalled.",
+    )
+
+    output_folder = Path.home() / "Downloads" / "session_capsules"
+    saved = save_full_capsule(capsule, output_folder)
+    print(json.dumps(saved, indent=2))
+
+# Session Capsule Protocol — Test Results
+
+Local validation run completed successfully.
+
+```text
+PASS: 13/13 checks passed
+- 01 create_capsule returns SessionCapsule
+- 02 required list fields are preserved
+- 03 validate_capsule accepts valid capsule
+- 04 validate_capsule rejects missing fields
+- 05 save_full_capsule writes JSON
+- 06 save_full_capsule writes Markdown
+- 07 load_capsule_json restores scope
+- 08 render markdown includes Next Safe Step
+- 09 index_capsules discovers saved capsule
+- 10 recall_capsule finds failure context
+- 11 recall_capsule supports next-step query
+- 12 recall_capsule supports do-not-repeat query
+- 13 safe_slug creates repository-safe names
+```
+
+## What this proves
+
+This validates the core continuity loop:
+
+1. create a structured capsule
+2. enforce required fields
+3. save machine-readable JSON
+4. save human-readable Markdown
+5. reload and validate the capsule
+6. index saved capsules
+7. recall the relevant capsule from a later query
+8. preserve next-step and do-not-repeat boundaries
+
+This is not a chatbot memory claim. It is a portable restore-point mechanism for AI workflow continuity.
